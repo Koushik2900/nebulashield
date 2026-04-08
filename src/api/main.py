@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from src.analyzer.threat_analyzer import ThreatAnalyzer
+from src.analyzer.llm_analyzer import AdaptiveLLMAnalyzer
 from src.api.feedback_api import feedback_app
 from src.db.database import get_db, init_db, SessionLocal
 from src.db.models import ThreatLog
@@ -27,11 +28,15 @@ REQUESTS_ALLOWED = Counter("nebulashield_requests_allowed_total", "Requests allo
 THREAT_SCORE_GAUGE = Gauge("nebulashield_last_threat_score", "Threat score of the last analyzed request")
 
 # --------------------------------------------------------------------------- #
-# Threat analyzer singleton
+# Analyzer singletons
 # --------------------------------------------------------------------------- #
 analyzer = ThreatAnalyzer()
+llm_analyzer = AdaptiveLLMAnalyzer()
 
 THREAT_THRESHOLD = 60
+# Grey zone: heuristic score where LLM is consulted for a second opinion
+_LLM_GREY_ZONE_LOW = 30
+_LLM_GREY_ZONE_HIGH = 70
 
 
 def _to_jsonable(obj):
@@ -44,6 +49,12 @@ def _to_jsonable(obj):
         return float(obj)
     return obj
 
+
+def _combine_scores(heuristic_score: float, llm_score: float) -> float:
+    """Combine heuristic and LLM scores with weighted average."""
+    return 0.4 * heuristic_score + 0.6 * llm_score
+
+
 # --------------------------------------------------------------------------- #
 # App
 # --------------------------------------------------------------------------- #
@@ -53,7 +64,7 @@ app = FastAPI()
 init_db()
 
 # Whitelist: paths that bypass WAF inspection
-WAF_WHITELIST = {"/health", "/metrics", "/analyze", "/docs", "/openapi.json", "/redoc"}
+WAF_WHITELIST = {"/health", "/metrics", "/analyze", "/analyze/deep", "/docs", "/openapi.json", "/redoc"}
 
 # --------------------------------------------------------------------------- #
 # WAF Middleware
@@ -75,7 +86,7 @@ async def waf_middleware(request: Request, call_next):
     combined = f"{request.url.path} {query_string} {body_text}".strip()
 
     features = analyzer.extract_features(combined)
-    score = analyzer.calculate_threat_score(features)
+    score = analyzer.calculate_threat_score(features, payload=combined)
 
     REQUESTS_TOTAL.inc()
     THREAT_SCORE_GAUGE.set(score)
@@ -143,11 +154,25 @@ class AnalyzeRequest(BaseModel):
 @app.post("/analyze")
 async def analyze(request: AnalyzeRequest, req: Request, db: Session = Depends(get_db)):
     features = analyzer.extract_features(request.payload)
-    score = analyzer.calculate_threat_score(features)
-    decision = "BLOCK" if score > THREAT_THRESHOLD else "ALLOW"
+    heuristic_score = analyzer.calculate_threat_score(features, payload=request.payload)
+
+    # LLM second-opinion in the grey zone
+    llm_analysis = None
+    final_score = heuristic_score
+    if _LLM_GREY_ZONE_LOW <= heuristic_score <= _LLM_GREY_ZONE_HIGH:
+        try:
+            llm_analysis = await llm_analyzer.analyze_payload(
+                request.payload, features, heuristic_score
+            )
+            if llm_analysis and "llm_score" in llm_analysis:
+                final_score = _combine_scores(heuristic_score, llm_analysis["llm_score"])
+        except Exception as exc:
+            logger.warning("LLM analysis skipped: %s", exc)
+
+    decision = "BLOCK" if final_score > THREAT_THRESHOLD else "ALLOW"
 
     REQUESTS_TOTAL.inc()
-    THREAT_SCORE_GAUGE.set(score)
+    THREAT_SCORE_GAUGE.set(final_score)
     if decision == "BLOCK":
         REQUESTS_BLOCKED.inc()
     else:
@@ -158,7 +183,7 @@ async def analyze(request: AnalyzeRequest, req: Request, db: Session = Depends(g
     source_ip = req.client.host if req.client else None
     threat_log = ThreatLog(
         payload=request.payload,
-        threat_score=score,
+        threat_score=final_score,
         decision=decision,
         source_ip=source_ip,
         request_path=req.url.path,
@@ -168,14 +193,71 @@ async def analyze(request: AnalyzeRequest, req: Request, db: Session = Depends(g
     db.commit()
     db.refresh(threat_log)
 
-    return JSONResponse(
-        content={
-            "threat_log_id": threat_log.id,
-            "threat_score": score,
-            "decision": decision,
-            "features": features_jsonable,
-        }
+    response_body = {
+        "threat_log_id": threat_log.id,
+        "threat_score": final_score,
+        "heuristic_score": heuristic_score,
+        "decision": decision,
+        "features": features_jsonable,
+    }
+    if llm_analysis:
+        response_body["llm_analysis"] = llm_analysis
+
+    return JSONResponse(content=response_body)
+
+
+@app.post("/analyze/deep")
+async def analyze_deep(request: AnalyzeRequest, req: Request, db: Session = Depends(get_db)):
+    """Deep analysis: always runs both heuristic + LLM analysis."""
+    features = analyzer.extract_features(request.payload)
+    heuristic_score = analyzer.calculate_threat_score(features, payload=request.payload)
+
+    llm_analysis = None
+    final_score = heuristic_score
+    try:
+        llm_analysis = await llm_analyzer.analyze_payload(
+            request.payload, features, heuristic_score
+        )
+        if llm_analysis and "llm_score" in llm_analysis:
+            final_score = _combine_scores(heuristic_score, llm_analysis["llm_score"])
+    except Exception as exc:
+        logger.warning("LLM analysis skipped in deep mode: %s", exc)
+
+    decision = "BLOCK" if final_score > THREAT_THRESHOLD else "ALLOW"
+
+    REQUESTS_TOTAL.inc()
+    THREAT_SCORE_GAUGE.set(final_score)
+    if decision == "BLOCK":
+        REQUESTS_BLOCKED.inc()
+    else:
+        REQUESTS_ALLOWED.inc()
+
+    features_jsonable = {k: _to_jsonable(v) for k, v in features.items()}
+
+    source_ip = req.client.host if req.client else None
+    threat_log = ThreatLog(
+        payload=request.payload,
+        threat_score=final_score,
+        decision=decision,
+        source_ip=source_ip,
+        request_path=req.url.path,
     )
+    threat_log.set_features(features_jsonable)
+    db.add(threat_log)
+    db.commit()
+    db.refresh(threat_log)
+
+    response_body = {
+        "threat_log_id": threat_log.id,
+        "threat_score": final_score,
+        "heuristic_score": heuristic_score,
+        "decision": decision,
+        "features": features_jsonable,
+        "llm_analysis": llm_analysis,
+        "llm_available": llm_analysis is not None,
+    }
+
+    return JSONResponse(content=response_body)
 
 
 # --------------------------------------------------------------------------- #
