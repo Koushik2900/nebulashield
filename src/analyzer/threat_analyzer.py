@@ -3,6 +3,30 @@ import numpy as np
 from scipy.stats import entropy as scipy_entropy
 from typing import Dict, Any
 
+# Dangerous patterns that definitively indicate an attack
+_DANGEROUS_PATTERNS = [
+    # SQL Injection patterns
+    (r"UNION\s+(?:ALL\s+)?SELECT", 35),
+    (r"DROP\s+TABLE", 35),
+    (r"'\s*OR\s+'?1'?\s*=\s*'?1", 35),
+    (r"'\s*OR\s+\d+\s*=\s*\d+", 30),
+    (r"--\s*$", 20),
+    (r"/\*.*?\*/", 20),
+    # Command injection patterns
+    (r";\s*(?:cat|whoami|ls|id|pwd|wget|curl|bash|sh)\b", 40),
+    (r"\|\s*(?:cat|whoami|ls|id|pwd|wget|curl|bash|sh)\b", 40),
+    (r"`[^`]+`", 25),
+    # Path traversal patterns
+    (r"(?:\.\.[\\/]){2,}", 35),
+    # XSS patterns
+    (r"<script[\s>]", 35),
+    (r"javascript\s*:", 30),
+    (r"on(?:error|load|click|mouseover)\s*=", 30),
+]
+
+_COMPILED_PATTERNS = [(re.compile(p, re.I | re.S), score) for p, score in _DANGEROUS_PATTERNS]
+
+
 class ThreatAnalyzer:
     """
     Multi-stage threat detection using heuristics, entropy analysis, and anomaly detection.
@@ -67,20 +91,22 @@ class ThreatAnalyzer:
         
         return features
     
-    def calculate_threat_score(self, features: Dict[str, Any]) -> float:
+    def calculate_threat_score(self, features: Dict[str, Any], payload: str = "") -> float:
         """Weighted scoring system for threat assessment"""
         
         score = 0.0
-        # Increased weights and added missing indicators to ensure test compliance
+
+        # --- Base weights ---
         weights = {
             "entropy_anomaly": 15,
-            "sql_keywords_count": 20,
-            "suspicious_quotes": 12,    # Crucial for SQLi test
-            "script_tags": 25,          # Hits > 10 requirement instantly
-            "path_traversal": 18,       # Hits > 5 requirement instantly
+            "sql_keywords_count": 8,   # per-keyword contribution; compounded below
+            "suspicious_quotes": 5,
+            "sql_comments": 20,
+            "script_tags": 30,
+            "path_traversal": 25,
             "internal_ips": 22,
             "url_encoding_ratio": 12,
-            "command_keywords": 20,
+            "command_keywords": 25,
             "xxe_indicators": 18,
             "payload_length": 5,
         }
@@ -93,16 +119,52 @@ class ThreatAnalyzer:
                     score += weight if value else 0
                 
                 elif isinstance(value, (int, float)):
-                    # Threshold logic: if we find it, we score it heavily
                     if value > 0:
                         if feature == "payload_length":
                             score += weight * min(value / 1000, 1.0)
                         elif feature == "url_encoding_ratio":
                             score += weight * value
+                        elif feature == "sql_keywords_count":
+                            # Scale: 1→8, 2→18, 3→30, 4→44 ...
+                            score += weight * value + max(0, value - 1) * 2
                         else:
-                            # Direct addition for critical security hits
                             score += weight + (min(value - 1, 5) * 2)
-        
+
+        # --- Compound signal bonuses ---
+        sql_kw = features.get("sql_keywords_count", 0)
+        sql_cm = features.get("sql_comments", 0)
+        quotes = features.get("suspicious_quotes", 0)
+        cmd_kw = features.get("command_keywords", 0)
+        path_tr = features.get("path_traversal", 0)
+
+        # Multiple SQL signals together → big extra penalty
+        if sql_kw >= 2 and sql_cm >= 1:
+            score += 25
+        if sql_kw >= 2 and quotes >= 1:
+            score += 15
+        if sql_kw >= 1 and quotes >= 2:
+            score += 10
+        if sql_kw >= 3:
+            score += 20
+        if sql_cm >= 1 and quotes >= 1:
+            score += 10
+
+        # Command injection with pipe/semicolon patterns
+        if cmd_kw >= 1 and sql_cm >= 1:
+            score += 15
+        if cmd_kw >= 2:
+            score += 20
+
+        # Path traversal depth bonus
+        if path_tr >= 2:
+            score += 20
+
+        # --- Pattern-based detection (regex for known dangerous patterns) ---
+        if payload:
+            for pattern, pattern_score in _COMPILED_PATTERNS:
+                if pattern.search(payload):
+                    score += pattern_score
+
         return min(score, 100)
 
     def detect_anomaly_vs_baseline(self, features: Dict[str, Any]) -> float:

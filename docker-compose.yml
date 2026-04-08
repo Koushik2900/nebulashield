@@ -8,7 +8,16 @@ services:
       - "8080:8080"
     environment:
       - BACKEND_URL=http://localhost:8000
-      - OLLAMA_URL=http://localhost:11434
+      - OLLAMA_URL=http://ollama:11434
+      - LLM_BACKEND=ollama
+    networks:
+      - nebula
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama-waf
+    ports:
+      - "11434:11434"
     networks:
       - nebula
 
