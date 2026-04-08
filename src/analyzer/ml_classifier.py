@@ -40,6 +40,7 @@ class MLThreatClassifier:
         self.label_encoder = None   # LabelEncoder for attack_type classes
         self.model_path = model_path
         self._feature_count: Optional[int] = None
+        self._threat_analyzer = None  # lazy-initialised ThreatAnalyzer
 
     # ---------------------------------------------------------------------- #
     # Training
@@ -99,9 +100,12 @@ class MLThreatClassifier:
         combined = sp.hstack([tfidf_matrix, sp.csr_matrix(numerical)])
         self._feature_count = combined.shape[1]
 
-        # 3. Train binary classifier
+        # 3. Train binary classifier — stratify only when each class has ≥2 samples
+        from collections import Counter as _Counter
+        label_counts = _Counter(labels)
+        stratify_labels = labels if all(c >= 2 for c in label_counts.values()) else None
         X_train, X_test, y_train, y_test = train_test_split(
-            combined, labels, test_size=0.2, random_state=42, stratify=labels
+            combined, labels, test_size=0.2, random_state=42, stratify=stratify_labels
         )
         self.model = RandomForestClassifier(
             n_estimators=200, random_state=42, n_jobs=-1
@@ -261,12 +265,13 @@ class MLThreatClassifier:
 
     def _extract_numerical_features(self, payloads: list) -> np.ndarray:
         """Extract numerical heuristic features for a list of payload strings."""
-        from src.analyzer.threat_analyzer import ThreatAnalyzer
+        if self._threat_analyzer is None:
+            from src.analyzer.threat_analyzer import ThreatAnalyzer
+            self._threat_analyzer = ThreatAnalyzer()
 
-        ta = ThreatAnalyzer()
         rows = []
         for payload in payloads:
-            feats = ta.extract_features(payload)
+            feats = self._threat_analyzer.extract_features(payload)
             rows.append(self._feature_dict_to_row(feats))
         return np.array(rows, dtype=float)
 

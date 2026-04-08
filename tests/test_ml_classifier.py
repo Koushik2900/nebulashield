@@ -62,26 +62,26 @@ def client(db_session):
 # --------------------------------------------------------------------------- #
 _MINI_CSV_CONTENT = """\
 payload,label,attack_type
-' OR '1'='1,1,sqli
-1' UNION SELECT username password FROM users--,1,sqli
-<script>alert('xss')</script>,1,xss
-<img src=x onerror=alert(1)>,1,xss
-; cat /etc/passwd,1,command_injection
-| whoami,1,command_injection
-../../etc/passwd,1,path_traversal
-../../../etc/shadow,1,path_traversal
-http://169.254.169.254/latest/meta-data/,1,ssrf
-http://127.0.0.1:80/admin,1,ssrf
-<!ENTITY xxe SYSTEM "file:///etc/passwd">,1,xxe
-%27%20OR%20%271%27%3D%271,1,encoded
-search for electronics,0,none
-get user profile page=1,0,none
-checkout order id=12345,0,none
-find products under $50,0,none
-hello world,0,none
-normal text without any special characters,0,none
-list all available categories,0,none
-filter by brand=Nike color=red,0,none
+"' OR '1'='1",1,sqli
+"1' UNION SELECT username,password FROM users--",1,sqli
+"<script>alert('xss')</script>",1,xss
+"<img src=x onerror=alert(1)>",1,xss
+"; cat /etc/passwd",1,command_injection
+"| whoami",1,command_injection
+"../../etc/passwd",1,path_traversal
+"../../../etc/shadow",1,path_traversal
+"http://169.254.169.254/latest/meta-data/",1,ssrf
+"http://127.0.0.1:80/admin",1,ssrf
+"<!ENTITY xxe SYSTEM file:///etc/passwd>",1,xxe
+"%27%20OR%20%271%27%3D%271",1,encoded
+"search for electronics",0,none
+"get user profile page=1",0,none
+"checkout order id=12345",0,none
+"find products under $50",0,none
+"hello world",0,none
+"normal text without any special characters",0,none
+"list all available categories",0,none
+"filter by brand=Nike color=red",0,none
 """
 
 

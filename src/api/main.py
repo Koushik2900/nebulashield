@@ -361,12 +361,10 @@ async def ml_train(db: Session = Depends(get_db)):
     if os.path.exists(_training_data_path):
         import pandas as pd
         base_df = pd.read_csv(_training_data_path)
-        for _, row in base_df.iterrows():
-            rows.append({
-                "payload": str(row["payload"]),
-                "label": int(row["label"]),
-                "attack_type": str(row.get("attack_type", "none")),
-            })
+        rows.extend(
+            {"payload": str(r["payload"]), "label": int(r["label"]), "attack_type": str(r.get("attack_type", "none"))}
+            for r in base_df.to_dict("records")
+        )
 
     # Pull from DB: analyst feedback with explicit corrections
     try:
@@ -429,12 +427,10 @@ async def ml_retrain_from_feedback(db: Session = Depends(get_db)):
     if os.path.exists(_training_data_path):
         import pandas as pd
         base_df = pd.read_csv(_training_data_path)
-        for _, row in base_df.iterrows():
-            rows.append({
-                "payload": str(row["payload"]),
-                "label": int(row["label"]),
-                "attack_type": str(row.get("attack_type", "none")),
-            })
+        rows.extend(
+            {"payload": str(r["payload"]), "label": int(r["label"]), "attack_type": str(r.get("attack_type", "none"))}
+            for r in base_df.to_dict("records")
+        )
 
     feedback_count = 0
     try:
