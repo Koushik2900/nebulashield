@@ -3,15 +3,18 @@ import sys
 import os
 
 import numpy as np
-from fastapi import FastAPI, Request, Response, Query
+from fastapi import FastAPI, Request, Response, Query, Depends
 from fastapi.responses import JSONResponse, Response as FastAPIResponse
 from pydantic import BaseModel
 from prometheus_client import Counter, Gauge, generate_latest, CONTENT_TYPE_LATEST
+from sqlalchemy.orm import Session
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from src.analyzer.threat_analyzer import ThreatAnalyzer
 from src.api.feedback_api import feedback_app
+from src.db.database import get_db, init_db, SessionLocal
+from src.db.models import ThreatLog
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +49,9 @@ def _to_jsonable(obj):
 # --------------------------------------------------------------------------- #
 app = FastAPI()
 
+# Auto-create DB tables on startup
+init_db()
+
 # Whitelist: paths that bypass WAF inspection
 WAF_WHITELIST = {"/health", "/metrics", "/analyze", "/docs", "/openapi.json", "/redoc"}
 
@@ -79,6 +85,25 @@ async def waf_middleware(request: Request, call_next):
         logger.warning(
             "WAF BLOCKED request: path=%s score=%.1f", request.url.path, score
         )
+        # Log the blocked request to the database
+        source_ip = request.client.host if request.client else None
+        db = SessionLocal()
+        try:
+            threat_log = ThreatLog(
+                payload=combined,
+                threat_score=score,
+                decision="BLOCK",
+                source_ip=source_ip,
+                request_path=request.url.path,
+            )
+            threat_log.set_features({k: _to_jsonable(v) for k, v in features.items()})
+            db.add(threat_log)
+            db.commit()
+        except Exception as db_err:
+            logger.error("Failed to save WAF block to DB: %s", db_err)
+            db.rollback()
+        finally:
+            db.close()
         return JSONResponse(
             status_code=403,
             content={"detail": "Forbidden", "threat_score": score},
@@ -116,7 +141,7 @@ class AnalyzeRequest(BaseModel):
 
 
 @app.post("/analyze")
-async def analyze(request: AnalyzeRequest):
+async def analyze(request: AnalyzeRequest, req: Request, db: Session = Depends(get_db)):
     features = analyzer.extract_features(request.payload)
     score = analyzer.calculate_threat_score(features)
     decision = "BLOCK" if score > THREAT_THRESHOLD else "ALLOW"
@@ -129,8 +154,27 @@ async def analyze(request: AnalyzeRequest):
         REQUESTS_ALLOWED.inc()
 
     features_jsonable = {k: _to_jsonable(v) for k, v in features.items()}
+
+    source_ip = req.client.host if req.client else None
+    threat_log = ThreatLog(
+        payload=request.payload,
+        threat_score=score,
+        decision=decision,
+        source_ip=source_ip,
+        request_path=req.url.path,
+    )
+    threat_log.set_features(features_jsonable)
+    db.add(threat_log)
+    db.commit()
+    db.refresh(threat_log)
+
     return JSONResponse(
-        content={"threat_score": score, "decision": decision, "features": features_jsonable}
+        content={
+            "threat_log_id": threat_log.id,
+            "threat_score": score,
+            "decision": decision,
+            "features": features_jsonable,
+        }
     )
 
 
