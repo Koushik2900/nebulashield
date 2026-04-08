@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, Request, Response, Query
 from fastapi.responses import JSONResponse
 import time
 
@@ -12,6 +12,11 @@ async def health_check():
 async def metrics():
     # Here you would typically gather and return metrics data
     return JSONResponse(content={"message": "Metrics data is not implemented yet."})
+
+@app.get("/users")
+async def get_users(id: int = Query(..., description="The user ID to look up")):
+    # Placeholder response — replace with real DB lookup later
+    return JSONResponse(content={"id": id, "name": "example_user"})
 
 if __name__ == "__main__":
     import uvicorn
