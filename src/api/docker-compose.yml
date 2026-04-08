@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  nebula-waf:
+    build: .
+    container_name: nebula-shield
+    ports:
+      - "8080:8080"
+    environment:
+      - BACKEND_URL=http://localhost:8000
+      - OLLAMA_URL=http://localhost:11434
+    networks:
+      - nebula
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus-waf
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    networks:
+      - nebula
+
+networks:
+  nebula:
+    driver: bridge
