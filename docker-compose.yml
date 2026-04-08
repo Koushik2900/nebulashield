@@ -7,9 +7,13 @@ services:
     ports:
       - "8080:8080"
     environment:
-      - BACKEND_URL=http://localhost:8000
+      - LLM_BACKEND=groq
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - OLLAMA_URL=http://ollama:11434
-      - LLM_BACKEND=ollama
+      - LLM_MODEL=
     networks:
       - nebula
 

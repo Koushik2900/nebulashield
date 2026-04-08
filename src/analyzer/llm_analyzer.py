@@ -39,6 +39,15 @@ Guidelines:
 - BENIGN + llm_score < 30 for normal input
 - confidence reflects how certain you are about the classification"""
 
+# Default models per backend
+_DEFAULT_MODELS = {
+    "groq": "llama-3.3-70b-versatile",
+    "gemini": "gemini-2.0-flash",
+    "openrouter": "meta-llama/llama-3.3-70b-instruct:free",
+    "openai": "gpt-4o-mini",
+    "ollama": "llama3.2",
+}
+
 
 def _build_prompt(payload: str, features: Dict[str, Any], heuristic_score: float) -> str:
     """Build the security analysis prompt."""
@@ -72,24 +81,28 @@ def _parse_llm_response(raw: str) -> Optional[Dict[str, Any]]:
 
 class AdaptiveLLMAnalyzer:
     """
-    LLM-powered security analyzer supporting Ollama (local) and OpenAI backends.
+    LLM-powered security analyzer supporting Groq, Gemini, OpenRouter, OpenAI, and Ollama backends.
 
     Configuration via environment variables:
-      LLM_BACKEND   - "ollama" (default) or "openai"
-      OLLAMA_URL    - Ollama base URL (default: http://ollama:11434)
-      LLM_MODEL     - model name override (default: llama3.2 / gpt-4o-mini)
-      OPENAI_API_KEY - required when LLM_BACKEND=openai
+      LLM_BACKEND        - "groq" (default), "gemini", "openrouter", "openai", or "ollama"
+      GROQ_API_KEY       - required when LLM_BACKEND=groq
+      GEMINI_API_KEY     - required when LLM_BACKEND=gemini
+      OPENROUTER_API_KEY - required when LLM_BACKEND=openrouter
+      OPENAI_API_KEY     - required when LLM_BACKEND=openai
+      OLLAMA_URL         - Ollama base URL (default: http://ollama:11434)
+      LLM_MODEL          - model name override
     """
 
     def __init__(self):
-        self.backend = os.getenv("LLM_BACKEND", "ollama").lower()
+        self.backend = os.getenv("LLM_BACKEND", "groq").lower()
         self.ollama_url = os.getenv("OLLAMA_URL", "http://ollama:11434").rstrip("/")
+        self.groq_api_key = os.getenv("GROQ_API_KEY", "")
+        self.gemini_api_key = os.getenv("GEMINI_API_KEY", "")
+        self.openrouter_api_key = os.getenv("OPENROUTER_API_KEY", "")
         self.openai_api_key = os.getenv("OPENAI_API_KEY", "")
 
-        if self.backend == "openai":
-            self.model = os.getenv("LLM_MODEL", "gpt-4o-mini")
-        else:
-            self.model = os.getenv("LLM_MODEL", "llama3.2")
+        default_model = _DEFAULT_MODELS.get(self.backend, "llama3.2")
+        self.model = os.getenv("LLM_MODEL") or default_model
 
     # ---------------------------------------------------------------------- #
     # Public API
@@ -98,9 +111,15 @@ class AdaptiveLLMAnalyzer:
     def is_available(self) -> bool:
         """Check if the configured LLM backend is reachable (synchronous)."""
         try:
-            if self.backend == "openai":
+            if self.backend == "groq":
+                return bool(self.groq_api_key)
+            elif self.backend == "gemini":
+                return bool(self.gemini_api_key)
+            elif self.backend == "openrouter":
+                return bool(self.openrouter_api_key)
+            elif self.backend == "openai":
                 return bool(self.openai_api_key)
-            else:
+            else:  # ollama
                 resp = requests.get(
                     f"{self.ollama_url}/api/tags",
                     timeout=_LLM_TIMEOUT,
@@ -122,9 +141,34 @@ class AdaptiveLLMAnalyzer:
         """
         prompt = _build_prompt(payload, features, heuristic_score)
         try:
-            if self.backend == "openai":
-                return await self._query_openai(prompt)
-            else:
+            if self.backend == "groq":
+                return await self._query_openai_compatible(
+                    prompt,
+                    base_url="https://api.groq.com/openai/v1",
+                    api_key=self.groq_api_key,
+                    model=self.model,
+                )
+            elif self.backend == "gemini":
+                return await self._query_gemini(prompt)
+            elif self.backend == "openrouter":
+                return await self._query_openai_compatible(
+                    prompt,
+                    base_url="https://openrouter.ai/api/v1",
+                    api_key=self.openrouter_api_key,
+                    model=self.model,
+                    extra_headers={
+                        "HTTP-Referer": "https://github.com/Koushik2900/nebulashield",
+                        "X-Title": "NebulaShield WAF",
+                    },
+                )
+            elif self.backend == "openai":
+                return await self._query_openai_compatible(
+                    prompt,
+                    base_url=None,
+                    api_key=self.openai_api_key,
+                    model=self.model,
+                )
+            else:  # ollama
                 return await self._query_ollama(prompt)
         except Exception as exc:
             logger.warning("LLM analysis failed (%s): %s", type(exc).__name__, exc)
@@ -133,6 +177,59 @@ class AdaptiveLLMAnalyzer:
     # ---------------------------------------------------------------------- #
     # Backend implementations
     # ---------------------------------------------------------------------- #
+
+    async def _query_openai_compatible(
+        self,
+        prompt: str,
+        base_url: Optional[str],
+        api_key: str,
+        model: str,
+        extra_headers: Optional[Dict[str, str]] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Send prompt to any OpenAI-compatible API (OpenAI, Groq, OpenRouter)."""
+        import openai
+        kwargs: Dict[str, Any] = {
+            "api_key": api_key,
+            "timeout": _LLM_TIMEOUT,
+        }
+        if base_url:
+            kwargs["base_url"] = base_url
+        if extra_headers:
+            kwargs["default_headers"] = extra_headers
+
+        client = openai.AsyncOpenAI(**kwargs)
+        response = await client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            response_format={"type": "json_object"},
+            temperature=0,
+        )
+        raw = response.choices[0].message.content or ""
+        return _parse_llm_response(raw)
+
+    async def _query_gemini(self, prompt: str) -> Optional[Dict[str, Any]]:
+        """Send prompt to the Google Gemini REST API and parse the response."""
+        import aiohttp
+        url = (
+            f"https://generativelanguage.googleapis.com/v1beta/models"
+            f"/{self.model}:generateContent?key={self.gemini_api_key}"
+        )
+        body = {
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {"responseMimeType": "application/json"},
+        }
+        timeout = aiohttp.ClientTimeout(total=_LLM_TIMEOUT)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(url, json=body) as resp:
+                resp.raise_for_status()
+                data = await resp.json()
+                raw = (
+                    data.get("candidates", [{}])[0]
+                    .get("content", {})
+                    .get("parts", [{}])[0]
+                    .get("text", "")
+                )
+                return _parse_llm_response(raw)
 
     async def _query_ollama(self, prompt: str) -> Optional[Dict[str, Any]]:
         """Send prompt to a local Ollama instance and parse the response."""
@@ -151,20 +248,4 @@ class AdaptiveLLMAnalyzer:
                 data = await resp.json()
                 raw = data.get("response", "")
                 return _parse_llm_response(raw)
-
-    async def _query_openai(self, prompt: str) -> Optional[Dict[str, Any]]:
-        """Send prompt to the OpenAI API and parse the response."""
-        import openai
-        client = openai.AsyncOpenAI(
-            api_key=self.openai_api_key,
-            timeout=_LLM_TIMEOUT,
-        )
-        response = await client.chat.completions.create(
-            model=self.model,
-            messages=[{"role": "user", "content": prompt}],
-            response_format={"type": "json_object"},
-            temperature=0,
-        )
-        raw = response.choices[0].message.content or ""
-        return _parse_llm_response(raw)
 

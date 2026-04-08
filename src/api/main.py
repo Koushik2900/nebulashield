@@ -64,7 +64,7 @@ app = FastAPI()
 init_db()
 
 # Whitelist: paths that bypass WAF inspection
-WAF_WHITELIST = {"/health", "/metrics", "/analyze", "/analyze/deep", "/docs", "/openapi.json", "/redoc"}
+WAF_WHITELIST = {"/health", "/metrics", "/analyze", "/analyze/deep", "/llm/status", "/docs", "/openapi.json", "/redoc"}
 
 # --------------------------------------------------------------------------- #
 # WAF Middleware
@@ -204,6 +204,16 @@ async def analyze(request: AnalyzeRequest, req: Request, db: Session = Depends(g
         response_body["llm_analysis"] = llm_analysis
 
     return JSONResponse(content=response_body)
+
+
+@app.get("/llm/status")
+async def llm_status():
+    """Return the configured LLM backend, model, and availability."""
+    return JSONResponse(content={
+        "backend": llm_analyzer.backend,
+        "model": llm_analyzer.model,
+        "available": llm_analyzer.is_available(),
+    })
 
 
 @app.post("/analyze/deep")
