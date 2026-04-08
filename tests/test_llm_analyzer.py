@@ -147,6 +147,58 @@ async def test_llm_analyzer_returns_none_on_connection_error():
     assert result is None
 
 
+# --------------------------------------------------------------------------- #
+# is_available() tests for all backends
+# --------------------------------------------------------------------------- #
+
+def test_llm_is_available_groq_with_key(monkeypatch):
+    """is_available() returns True for Groq when API key is set."""
+    monkeypatch.setenv("LLM_BACKEND", "groq")
+    monkeypatch.setenv("GROQ_API_KEY", "gsk_test_key")
+    llm = AdaptiveLLMAnalyzer()
+    assert llm.is_available() is True
+
+
+def test_llm_is_available_groq_without_key(monkeypatch):
+    """is_available() returns False for Groq when no API key."""
+    monkeypatch.setenv("LLM_BACKEND", "groq")
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    llm = AdaptiveLLMAnalyzer()
+    assert llm.is_available() is False
+
+
+def test_llm_is_available_gemini_with_key(monkeypatch):
+    """is_available() returns True for Gemini when API key is set."""
+    monkeypatch.setenv("LLM_BACKEND", "gemini")
+    monkeypatch.setenv("GEMINI_API_KEY", "gemini_test_key")
+    llm = AdaptiveLLMAnalyzer()
+    assert llm.is_available() is True
+
+
+def test_llm_is_available_gemini_without_key(monkeypatch):
+    """is_available() returns False for Gemini when no API key."""
+    monkeypatch.setenv("LLM_BACKEND", "gemini")
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    llm = AdaptiveLLMAnalyzer()
+    assert llm.is_available() is False
+
+
+def test_llm_is_available_openrouter_with_key(monkeypatch):
+    """is_available() returns True for OpenRouter when API key is set."""
+    monkeypatch.setenv("LLM_BACKEND", "openrouter")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-test_key")
+    llm = AdaptiveLLMAnalyzer()
+    assert llm.is_available() is True
+
+
+def test_llm_is_available_openrouter_without_key(monkeypatch):
+    """is_available() returns False for OpenRouter when no API key."""
+    monkeypatch.setenv("LLM_BACKEND", "openrouter")
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    llm = AdaptiveLLMAnalyzer()
+    assert llm.is_available() is False
+
+
 def test_llm_is_available_openai_with_key(monkeypatch):
     """is_available() returns True for OpenAI when API key is set."""
     monkeypatch.setenv("LLM_BACKEND", "openai")
@@ -169,6 +221,178 @@ def test_llm_is_available_ollama_unreachable(monkeypatch):
     monkeypatch.setenv("OLLAMA_URL", "http://127.0.0.1:19999")
     llm = AdaptiveLLMAnalyzer()
     assert llm.is_available() is False
+
+
+# --------------------------------------------------------------------------- #
+# Default model selection tests
+# --------------------------------------------------------------------------- #
+
+def test_default_model_groq(monkeypatch):
+    """Groq backend defaults to llama-3.3-70b-versatile."""
+    monkeypatch.setenv("LLM_BACKEND", "groq")
+    monkeypatch.delenv("LLM_MODEL", raising=False)
+    llm = AdaptiveLLMAnalyzer()
+    assert llm.model == "llama-3.3-70b-versatile"
+
+
+def test_default_model_gemini(monkeypatch):
+    """Gemini backend defaults to gemini-2.0-flash."""
+    monkeypatch.setenv("LLM_BACKEND", "gemini")
+    monkeypatch.delenv("LLM_MODEL", raising=False)
+    llm = AdaptiveLLMAnalyzer()
+    assert llm.model == "gemini-2.0-flash"
+
+
+def test_default_model_openrouter(monkeypatch):
+    """OpenRouter backend defaults to meta-llama/llama-3.3-70b-instruct:free."""
+    monkeypatch.setenv("LLM_BACKEND", "openrouter")
+    monkeypatch.delenv("LLM_MODEL", raising=False)
+    llm = AdaptiveLLMAnalyzer()
+    assert llm.model == "meta-llama/llama-3.3-70b-instruct:free"
+
+
+def test_default_model_openai(monkeypatch):
+    """OpenAI backend defaults to gpt-4o-mini."""
+    monkeypatch.setenv("LLM_BACKEND", "openai")
+    monkeypatch.delenv("LLM_MODEL", raising=False)
+    llm = AdaptiveLLMAnalyzer()
+    assert llm.model == "gpt-4o-mini"
+
+
+def test_default_model_ollama(monkeypatch):
+    """Ollama backend defaults to llama3.2."""
+    monkeypatch.setenv("LLM_BACKEND", "ollama")
+    monkeypatch.delenv("LLM_MODEL", raising=False)
+    llm = AdaptiveLLMAnalyzer()
+    assert llm.model == "llama3.2"
+
+
+def test_model_override(monkeypatch):
+    """LLM_MODEL env var overrides the default model for any backend."""
+    monkeypatch.setenv("LLM_BACKEND", "groq")
+    monkeypatch.setenv("LLM_MODEL", "mixtral-8x7b-32768")
+    llm = AdaptiveLLMAnalyzer()
+    assert llm.model == "mixtral-8x7b-32768"
+
+
+# --------------------------------------------------------------------------- #
+# _query_openai_compatible tests (mocked) for Groq, OpenRouter, OpenAI
+# --------------------------------------------------------------------------- #
+
+@pytest.mark.asyncio
+async def test_query_openai_compatible_groq():
+    """_query_openai_compatible routes Groq calls correctly."""
+    mock_response = {
+        "classification": "MALICIOUS",
+        "confidence": 90,
+        "attack_type": "SQL Injection",
+        "explanation": "SQL injection detected.",
+        "llm_score": 88,
+    }
+    llm = AdaptiveLLMAnalyzer()
+    llm.backend = "groq"
+    llm.groq_api_key = "gsk_test"
+
+    with patch.object(llm, "_query_openai_compatible", new=AsyncMock(return_value=mock_response)):
+        result = await llm.analyze_payload("' OR '1'='1", {}, 54.0)
+
+    assert result is not None
+    assert result["classification"] == "MALICIOUS"
+
+
+@pytest.mark.asyncio
+async def test_query_openai_compatible_openrouter():
+    """_query_openai_compatible routes OpenRouter calls correctly."""
+    mock_response = {
+        "classification": "BENIGN",
+        "confidence": 10,
+        "attack_type": "None",
+        "explanation": "Normal input.",
+        "llm_score": 5,
+    }
+    llm = AdaptiveLLMAnalyzer()
+    llm.backend = "openrouter"
+    llm.openrouter_api_key = "sk-or-test"
+
+    with patch.object(llm, "_query_openai_compatible", new=AsyncMock(return_value=mock_response)):
+        result = await llm.analyze_payload("hello world", {}, 5.0)
+
+    assert result is not None
+    assert result["classification"] == "BENIGN"
+
+
+@pytest.mark.asyncio
+async def test_query_openai_compatible_openai():
+    """_query_openai_compatible routes OpenAI calls correctly."""
+    mock_response = {
+        "classification": "SUSPICIOUS",
+        "confidence": 55,
+        "attack_type": "Other",
+        "explanation": "Possibly suspicious.",
+        "llm_score": 50,
+    }
+    llm = AdaptiveLLMAnalyzer()
+    llm.backend = "openai"
+    llm.openai_api_key = "sk-test"
+
+    with patch.object(llm, "_query_openai_compatible", new=AsyncMock(return_value=mock_response)):
+        result = await llm.analyze_payload("suspicious input", {}, 45.0)
+
+    assert result is not None
+    assert result["classification"] == "SUSPICIOUS"
+
+
+# --------------------------------------------------------------------------- #
+# _query_gemini tests (mocked)
+# --------------------------------------------------------------------------- #
+
+@pytest.mark.asyncio
+async def test_query_gemini_parses_response():
+    """_query_gemini returns structured dict from mocked Gemini response."""
+    mock_response = {
+        "classification": "MALICIOUS",
+        "confidence": 92,
+        "attack_type": "XSS",
+        "explanation": "XSS script tag detected.",
+        "llm_score": 85,
+    }
+    llm = AdaptiveLLMAnalyzer()
+    llm.backend = "gemini"
+    llm.gemini_api_key = "test_key"
+
+    with patch.object(llm, "_query_gemini", new=AsyncMock(return_value=mock_response)):
+        result = await llm.analyze_payload("<script>alert(1)</script>", {}, 55.0)
+
+    assert result is not None
+    assert result["attack_type"] == "XSS"
+
+
+@pytest.mark.asyncio
+async def test_query_gemini_returns_none_on_error():
+    """_query_gemini returns None when the API call fails."""
+    llm = AdaptiveLLMAnalyzer()
+    llm.backend = "gemini"
+    llm.gemini_api_key = "test_key"
+
+    with patch.object(llm, "_query_gemini", new=AsyncMock(side_effect=Exception("API error"))):
+        result = await llm.analyze_payload("payload", {}, 40.0)
+
+    assert result is None
+
+
+# --------------------------------------------------------------------------- #
+# Fallback when no API key is set
+# --------------------------------------------------------------------------- #
+
+@pytest.mark.asyncio
+async def test_groq_fallback_no_api_key(monkeypatch):
+    """When GROQ_API_KEY is not set, analyze_payload should still not raise."""
+    monkeypatch.setenv("LLM_BACKEND", "groq")
+    monkeypatch.delenv("GROQ_API_KEY", raising=False)
+    llm = AdaptiveLLMAnalyzer()
+    # _query_openai_compatible will raise due to missing key — should return None
+    result = await llm.analyze_payload("test payload", {}, 40.0)
+    assert result is None
 
 
 # --------------------------------------------------------------------------- #
@@ -279,3 +503,61 @@ def test_analyze_deep_combines_scores(client):
     # heuristic for <script> tag is > 60, so combined should also be > 60
     assert data["decision"] == "BLOCK"
     assert data["threat_score"] != data["heuristic_score"]
+
+
+# --------------------------------------------------------------------------- #
+# Tests for GET /llm/status endpoint
+# --------------------------------------------------------------------------- #
+
+def test_llm_status_endpoint_returns_200(client, monkeypatch):
+    """GET /llm/status should return 200 with backend info."""
+    monkeypatch.setenv("LLM_BACKEND", "groq")
+    response = client.get("/llm/status")
+    assert response.status_code == 200
+    data = response.json()
+    assert "backend" in data
+    assert "model" in data
+    assert "available" in data
+
+
+def test_llm_status_available_true_when_key_set(client, monkeypatch):
+    """GET /llm/status returns available=True when the API key is configured."""
+    import src.api.main as main_module
+    original_analyzer = main_module.llm_analyzer
+
+    mock_analyzer = MagicMock()
+    mock_analyzer.backend = "groq"
+    mock_analyzer.model = "llama-3.3-70b-versatile"
+    mock_analyzer.is_available.return_value = True
+
+    main_module.llm_analyzer = mock_analyzer
+    try:
+        response = client.get("/llm/status")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["backend"] == "groq"
+        assert data["model"] == "llama-3.3-70b-versatile"
+        assert data["available"] is True
+    finally:
+        main_module.llm_analyzer = original_analyzer
+
+
+def test_llm_status_available_false_when_no_key(client, monkeypatch):
+    """GET /llm/status returns available=False when no API key is configured."""
+    import src.api.main as main_module
+    original_analyzer = main_module.llm_analyzer
+
+    mock_analyzer = MagicMock()
+    mock_analyzer.backend = "groq"
+    mock_analyzer.model = "llama-3.3-70b-versatile"
+    mock_analyzer.is_available.return_value = False
+
+    main_module.llm_analyzer = mock_analyzer
+    try:
+        response = client.get("/llm/status")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["available"] is False
+    finally:
+        main_module.llm_analyzer = original_analyzer
+
