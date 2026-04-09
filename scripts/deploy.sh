@@ -91,7 +91,7 @@ else
 fi
 
 # --------------------------------------------------------------------------- #
-# Launch EC2 instance
+# Launch EC2 instance (32GB root disk)
 # --------------------------------------------------------------------------- #
 echo ""
 echo "⚙️  Launching EC2 instance..."
@@ -110,6 +110,7 @@ INSTANCE_ID=$(aws ec2 run-instances \
   --security-group-ids "$SG_ID" \
   --user-data "file://$USER_DATA_SCRIPT" \
   --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=$INSTANCE_NAME}]" \
+  --block-device-mappings '[{"DeviceName":"/dev/xvda","Ebs":{"VolumeSize":32,"DeleteOnTermination":true,"VolumeType":"gp3"}}]' \
   --query 'Instances[0].InstanceId' \
   --output text)
 
@@ -163,5 +164,5 @@ echo "       'sudo tail -f /var/log/cloud-init-output.log'"
 echo ""
 echo "   After bootstrap completes, start the app:"
 echo "     ssh -i nebulashield-key.pem ec2-user@$PUBLIC_IP"
-echo "     cd nebulashield && cp .env.example .env && nano .env"
+echo "     cd nebulashield && cp .env.example .env && vi .env"
 echo "     docker compose up -d"
